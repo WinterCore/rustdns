@@ -1,7 +1,14 @@
+use std::collections::VecDeque;
 
-pub trait Parser {
-    // -> (Bytes consumed, Self)
-    fn parse(data: &[u8]) -> (usize, Self);
+
+type ParseResult<T> = (
+    T,     // Parsed object
+    usize, // Consumed length
+);
+
+pub trait Parse: Sized {
+    // -> (Self, Bytes consumed)
+    fn parse(data: &[u8]) -> Result<ParseResult<Self>, String>;
 }
 
 #[derive(Debug, PartialEq)]
@@ -52,8 +59,12 @@ struct DNSHeader {
     arcount: u16,
 }
 
-impl Parser for DNSHeader {
-    fn parse(data: &[u8]) -> (usize, Self) {
+impl Parse for DNSHeader {
+    fn parse(data: &[u8]) -> Result<ParseResult<Self>, String> {
+        if data.len() < 12 {
+            return Err(String::from(format!("DNSHeader parser: Expected data length to be at least {}", 12)));
+        }
+
         // 2 bytes
         let id = u16::from_le_bytes([data[1], data[0]]);
 
@@ -106,11 +117,11 @@ impl Parser for DNSHeader {
             arcount,
         };
 
-        (12, header)
+        Ok((header, 12))
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 struct DNSQuestion {
     /// Domain name
     name: String,
@@ -120,6 +131,45 @@ struct DNSQuestion {
 
     /// Class (16 bit)
     class: u16,
+}
+
+struct DNSQuestionsParser<'data> {
+    packet: &'data [u8],
+}
+
+impl<'data> DNSQuestionsParser<'data> {
+    pub fn new(packet: &'data [u8]) -> Self {
+        Self { packet }
+    }
+
+    pub fn parse(&self, num_questions: usize, startptr: usize) -> Result<Vec<DNSQuestion>, String> {
+        let mut ptr = startptr;
+        let mut result = vec![];
+        
+        for _ in 0..num_questions {
+            let (question, len) = self.parse_question(ptr)?;
+
+            result.push(question);
+
+            ptr += len;
+        }
+
+        Ok(result)
+    }
+
+    fn parse_question(&self, ptr: usize) -> Result<ParseResult<DNSQuestion>, String> {
+        let (name, consumed_len) = read_qname(self.packet, ptr)?;
+        let end = ptr + consumed_len;
+
+        Ok((
+            DNSQuestion {
+                name,
+                rtype: u16::from_le_bytes([self.packet[end + 1], self.packet[end + 0]]),
+                class: u16::from_le_bytes([self.packet[end + 3], self.packet[end + 2]]),
+            },
+            consumed_len + 2 + 2,
+        ))
+    }
 }
 
 #[derive(Debug)]
@@ -138,6 +188,83 @@ struct DNSAnswer {
 
     /// Length of the data (16 bit)
     len: u16,
+
+    /// Record data (variable)
+    record: DNSRecord,
+}
+
+struct DNSAnswersParser<'data> {
+    packet: &'data [u8],
+}
+
+impl<'data> DNSAnswersParser<'data> {
+    pub fn new(packet: &'data [u8]) -> Self {
+        Self { packet }
+    }
+
+    pub fn parse(&self, num_answers: usize, startptr: usize) -> Result<Vec<DNSAnswer>, String> {
+        let mut ptr = startptr;
+        let mut result = vec![];
+        
+        for _ in 0..num_answers {
+            let (answer, len) = self.parse_answers(ptr)?;
+
+            result.push(answer);
+
+            ptr += len;
+        }
+
+        Ok(result)
+    }
+
+    fn parse_answers(&self, ptr: usize) -> Result<ParseResult<DNSAnswer>, String> {
+        let (name, consumed_len) = read_qname(self.packet, ptr)?;
+        println!("Debug: {:?}, {:?}", name, consumed_len);
+        let end = ptr + consumed_len;
+
+        let rtype = u16::from_le_bytes([self.packet[end + 1], self.packet[end + 0]]);
+        let class = u16::from_le_bytes([self.packet[end + 3], self.packet[end + 2]]);
+        let ttl = u32::from_le_bytes([
+            self.packet[end + 7],
+            self.packet[end + 6],
+            self.packet[end + 5],
+            self.packet[end + 4],
+        ]);
+
+        let len = u16::from_le_bytes([
+            self.packet[end + 9],
+            self.packet[end + 8],
+        ]);
+
+        let (record, record_len) = self.parse_record(len as usize, end + 10)?;
+
+        Ok((
+            DNSAnswer {
+                name,
+                rtype,
+                class,
+                ttl,
+                len,
+                record,
+            },
+            consumed_len + 2 + 2 + 4 + 2 + record_len
+        ))
+    }
+
+    fn parse_record(&self, len: usize, ptr: usize) -> Result<ParseResult<DNSRecord>, String> {
+        if len == 4 {
+            let ip = [
+                self.packet[ptr + 0],
+                self.packet[ptr + 1],
+                self.packet[ptr + 2],
+                self.packet[ptr + 3],
+            ];
+
+            return Ok((DNSRecord::IP(DNSIPRecord { ip }), 4))
+        }
+
+        Err(format!("DNSAnswersParser unhandled record length {}", len))
+    }
 }
 
 #[derive(Debug)]
@@ -171,30 +298,100 @@ enum DNSPacket {
 }
 
 struct DNSPacketParser<'data> {
-    pos: usize, // Might not be needed
-    data: &'data [u8],
+    packet: &'data [u8],
 }
+
+type DNSPacketParseError = String;
 
 impl<'data> DNSPacketParser<'data> {
     pub fn new(data: &'data[u8]) -> Self {
-        Self { pos: 0, data }
+        Self { packet: data }
     }
 
-    pub fn parse(&mut self) {
-        let header = DNSHeader::parse(&self.data[0..12]);
+    pub fn parse(&self) -> Result<(), DNSPacketParseError> {
+        let mut ptr: usize = 0;
+
+        let (header, header_size) = DNSHeader::parse(&self.packet[0..12])?;
+        ptr += header_size;
+
+        let questions = DNSQuestionsParser::new(self.packet)
+            .parse(
+                header.qdcount as usize,
+                ptr,
+            )?;
+
+        Ok(())
     }
+}
+
+// TODO: Look into Punycode for parsing Unicode
+fn read_qname(data: &[u8], pos: usize) -> Result<ParseResult<String>, String> {
+    let mut name = String::new();
+
+    type Ptr = usize;
+    type Level = usize;
+
+    let mut queue: VecDeque<(Ptr, Level)> = VecDeque::from(vec![(pos, 0)]);
+    let mut consumed_len = 0;
+
+    // Resolve names recursively by using a queue
+    while let Some((ptr, level)) = queue.pop_front() {
+        if data[ptr] == 0 { // null character
+            if level == 0 {
+                consumed_len += 1;
+            }
+
+            continue;
+        }
+
+        // Is a string segment
+        if data[ptr] >> 6 == 0b00 {
+            let len = (data[ptr] & 0b0011_1111) as usize; // Length
+            let slice = &data[(ptr + 1)..];
+            let str_segment = &slice[0..len];
+            name.push_str(&String::from_utf8_lossy(str_segment));
+            name.push('.');
+
+            queue.push_back((1 + ptr + len, level));
+
+            if level == 0 {
+                consumed_len += 1 + len;
+            }
+
+            continue;
+        }
+
+        // Is a pointer
+        if data[ptr] >> 6 == 0b11 {
+            let jumpptr = data[ptr + 1];
+
+            queue.push_back((jumpptr as usize, level + 1));
+
+            if level == 0 {
+                consumed_len += 2;
+            }
+
+            continue;
+        }
+        
+        return Err(String::from("DNSPacketParser: Unhandled qname marker"))
+    }
+
+    Ok((name, consumed_len))
 }
 
 #[cfg(test)]
 mod tests {
-    use super::{DNSHeader, DNSHeaderType, Parser};
+    use crate::parser::DNSQuestion;
+
+    use super::{DNSHeader, DNSHeaderType, Parse, DNSQuestionsParser, DNSAnswersParser};
 
     static QUERY_SAMPLE1: &'static [u8] = &[0x86, 0xe6, 0x01, 0x20, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, 0x00, 0x01, 0x00, 0x01];
     static RESP_SAMPLE1: &'static [u8] = &[0x86, 0xe6, 0x81, 0x80, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65, 0x03, 0x63, 0x6f, 0x6d, 0x00, 0x00, 0x01, 0x00, 0x01, 0xc0, 0x0c, 0x00, 0x01, 0x00, 0x01, 0x00, 0x00, 0x01, 0x2c, 0x00, 0x04, 0xac, 0xd9, 0x12, 0xee];
 
     #[test]
-    fn parses_query_header1() {
-        let (bytes_consumed, actual_header) = DNSHeader::parse(QUERY_SAMPLE1);
+    fn parses_header1() {
+        let (actual_header, bytes_consumed) = DNSHeader::parse(QUERY_SAMPLE1).unwrap();
         
         let expected_header = DNSHeader {
             id: 34534,
@@ -217,8 +414,8 @@ mod tests {
     }
 
     #[test]
-    fn parses_response_header1() {
-        let (bytes_consumed, actual_header) = DNSHeader::parse(RESP_SAMPLE1);
+    fn parses_header2() {
+        let (actual_header, bytes_consumed) = DNSHeader::parse(RESP_SAMPLE1).unwrap();
         
         let expected_header = DNSHeader {
             id: 34534,
@@ -238,5 +435,38 @@ mod tests {
 
         assert_eq!(12, bytes_consumed);
         assert_eq!(expected_header, actual_header);
+    }
+
+    #[test]
+    fn parses_questions1() {
+        let questions = DNSQuestionsParser::new(QUERY_SAMPLE1)
+            .parse(1, 12)
+            .unwrap();
+
+        assert_eq!(
+            vec![DNSQuestion { name: "google.com.".to_owned(), rtype: 1, class: 1 }],
+            questions,
+        )
+    }
+
+    #[test]
+    fn parses_questions2() {
+        let questions = DNSQuestionsParser::new(RESP_SAMPLE1)
+            .parse(1, 12)
+            .unwrap();
+
+        assert_eq!(
+            vec![DNSQuestion { name: "google.com.".to_owned(), rtype: 1, class: 1 }],
+            questions,
+        )
+    }
+
+    #[test]
+    fn parses_answers() {
+        let answers = DNSAnswersParser::new(RESP_SAMPLE1)
+            .parse(1, 0x1C)
+            .unwrap();
+
+        println!("Answers: {:?}", answers);
     }
 }
