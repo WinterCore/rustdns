@@ -7,14 +7,35 @@ type ParseResult<T> = Result<(
 ), String>;
 
 pub trait Parse: Sized {
-    // -> (Self, Bytes consumed)
     fn parse(data: &[u8]) -> ParseResult<Self>;
 }
 
-#[derive(Debug, PartialEq)]
-enum DNSHeaderType {
-    Query,
-    Response,
+pub trait Serialize: Sized {
+    fn serialize(&self) -> Vec<u8>;
+}
+
+#[derive(Debug, PartialEq, Copy, Clone)]
+pub enum DNSHeaderType {
+    Query = 0,
+    Response = 1,
+}
+
+impl Into<usize> for DNSHeaderType {
+    fn into(self) -> usize {
+        match self {
+            Self::Query => 0,
+            Self::Response => 1,
+        }
+    }
+}
+
+impl From<usize> for DNSHeaderType {
+    fn from(value: usize) -> Self {
+        match value {
+            0 => Self::Query,
+            1 => Self::Response,
+        }
+    }
 }
 
 #[derive(Debug, PartialEq, Eq, Copy, Clone)]
@@ -88,45 +109,45 @@ impl From<usize> for ResultCode {
 }
 
 #[derive(Debug, PartialEq)]
-struct DNSHeader {
+pub struct DNSHeader {
     /// Packet Identifier (16 bits)
-    id: u16,
+    pub id: u16,
 
     /// Query Response (1 bit)
-    qr: DNSHeaderType,
+    pub qr: DNSHeaderType,
 
     /// Operation Code (4 bits)
-    opcode: u8,
+    pub opcode: u8,
     
     /// Authoritative answer (1 bit)
-    aa: bool,
+    pub aa: bool,
     
     /// Truncated Message (1 bit)
-    tc: bool,
+    pub tc: bool,
     
     /// Recursion desired (1 bit)
-    rd: bool,
+    pub rd: bool,
 
     /// Recursion available (1 bit)
-    ra: bool,
+    pub ra: bool,
 
     /// Reserved (3 bit)
-    z: u8,
+    pub z: u8,
 
     /// Response Code (4 bit)
-    rcode: ResultCode,
+    pub rcode: ResultCode,
 
     /// Question Count (16 bit)
-    qdcount: u16,
+    pub qdcount: u16,
 
     /// Answer Count (16 bit)
-    ancount: u16,
+    pub ancount: u16,
 
     /// Authority Count (16 bit)
-    nscount: u16,
+    pub nscount: u16,
 
     /// Additional Count (16 bit)
-    arcount: u16,
+    pub arcount: u16,
 }
 
 impl Parse for DNSHeader {
@@ -191,16 +212,45 @@ impl Parse for DNSHeader {
     }
 }
 
+impl Serialize for DNSHeader {
+    fn serialize(&self) -> Vec<u8> {
+        let mut data = vec![0u8; 12];
+
+        data.extend_from_slice(&self.id.to_le_bytes());
+
+        data.push(
+            ((Into::<usize>::into(self.qr) as u8) << 7) |
+            (self.opcode                          << 3) |
+            (Into::<u8>::into(self.aa)            << 2) |
+            (Into::<u8>::into(self.tc)            << 1) |
+            (Into::<u8>::into(self.rd)            << 0)
+        );
+
+        data.push(
+            Into::<u8>::into(self.ra)                << 7 |
+            (self.z                                  << 4) |
+            ((Into::<usize>::into(self.rcode) as u8) << 0)
+        );
+
+        data.extend_from_slice(&self.qdcount.to_le_bytes());
+        data.extend_from_slice(&self.ancount.to_le_bytes());
+        data.extend_from_slice(&self.nscount.to_le_bytes());
+        data.extend_from_slice(&self.arcount.to_le_bytes());
+
+        data
+    }
+}
+
 #[derive(Debug, PartialEq)]
 struct DNSQuestion {
     /// Domain name
-    name: String,
+    pub name: String,
 
     /// Record type (16 bit)
-    rtype: u16,
+    pub rtype: u16,
 
     /// Class (16 bit)
-    class: u16,
+    pub class: u16,
 }
 
 struct DNSQuestionsParser<'data> {
@@ -245,22 +295,22 @@ impl<'data> DNSQuestionsParser<'data> {
 #[derive(Debug, PartialEq)]
 struct DNSRecord {
     /// Domain name
-    name: String,
+    pub name: String,
 
     /// Record type (16 bit)
-    rtype: u16,
+    pub rtype: u16,
 
     /// Class (16 bit)
-    class: u16,
+    pub class: u16,
 
     /// TTL (32 bit)
-    ttl: u32,
+    pub ttl: u32,
 
     /// Length of the data (16 bit)
-    len: u16,
+    pub len: u16,
 
     /// Record data (variable)
-    record: DNSRecordData,
+    pub record: DNSRecordData,
 }
 
 struct DNSRecordsParser<'data> {
@@ -353,7 +403,7 @@ impl<'data> DNSRecordsParser<'data> {
 }
 
 #[derive(Debug, PartialEq)]
-enum DNSRecordData {
+pub enum DNSRecordData {
     A {
         ip: [u8; 4],
     },
@@ -374,81 +424,65 @@ enum JumpInstruction {
 
 #[derive(Debug)]
 pub struct DNSPacket {
-    header: DNSHeader,
-    questions: Vec<DNSQuestion>,
-    answers: Vec<DNSRecord>,
-    authority: Vec<DNSRecord>,
-    additional: Vec<DNSRecord>,
+    pub header: DNSHeader,
+    pub questions: Vec<DNSQuestion>,
+    pub answers: Vec<DNSRecord>,
+    pub authority: Vec<DNSRecord>,
+    pub additional: Vec<DNSRecord>,
 }
 
 pub struct DNSPacketParser<'data> {
     packet: &'data [u8],
+    ptr: usize,
 }
 
 type DNSPacketParseError = String;
 
 impl<'data> DNSPacketParser<'data> {
     pub fn new(data: &'data[u8]) -> Self {
-        Self { packet: data }
+        Self { packet: data, ptr: 0 }
     }
 
-    pub fn parse(&self) -> Result<DNSPacket, DNSPacketParseError> {
-        let mut ptr: usize = 0;
+    fn parse_records(&mut self, count: usize) -> Result<Vec<DNSRecord>, String> {
+        if count == 0 {
+            return Ok(Vec::new());
+        }
 
+        let (records, records_size) = DNSRecordsParser::new(self.packet)
+            .parse(count, self.ptr)?;
+
+        self.ptr += records_size;
+
+        Ok(records)
+    }
+
+    fn parse_questions(&mut self, count: usize) -> Result<Vec<DNSQuestion>, String> {
+        if count == 0 {
+            return Ok(Vec::new());
+        }
+
+        let (questions, questions_size) = DNSQuestionsParser::new(self.packet)
+           .parse(count, self.ptr)?;
+
+        self.ptr += questions_size;
+
+        Ok(questions)
+    }
+
+    fn parse_header(&mut self) -> Result<DNSHeader, String> {
         let (header, header_size) = DNSHeader::parse(&self.packet[0..12])?;
-        ptr += header_size;
+        self.ptr += header_size;
 
-        let questions = {
-            if header.qdcount > 0 {
-               let (questions, questions_size) = DNSQuestionsParser::new(self.packet)
-                   .parse(header.qdcount as usize, ptr)?;
+        Ok(header)
+    }
 
-                ptr += questions_size;
+    pub fn parse(&mut self) -> Result<DNSPacket, DNSPacketParseError> {
+        let header = self.parse_header()?;
 
-                questions
-            } else {
-                vec![]
-            }
-        };
-
-        let answers = {
-            if header.ancount > 0 {
-                let (answers, answers_size) = DNSRecordsParser::new(self.packet)
-                    .parse(header.ancount as usize, ptr)?;
-
-                ptr += answers_size;
-
-                answers
-            } else {
-                vec![]
-            }
-        };
-
-        let authority = {
-            if header.nscount > 0 {
-                let (authority, authority_size) = DNSRecordsParser::new(self.packet)
-                    .parse(header.nscount as usize, ptr)?;
-
-                ptr += authority_size;
-
-                authority
-            } else {
-                vec![]
-            }
-        };
-
-        let additional = {
-            if header.arcount > 0 {
-                let (additional, additional_size) = DNSRecordsParser::new(self.packet)
-                    .parse(header.arcount as usize, ptr)?;
-
-                ptr += additional_size;
-
-                additional
-            } else {
-                vec![]
-            }
-        };
+        let questions = self.parse_questions(header.qdcount as usize)?;
+        let answers = self.parse_records(header.ancount as usize)?;
+        let authority = self.parse_records(header.nscount as usize)?;
+        let additional = self.parse_records(header.arcount as usize)?;
 
         Ok(DNSPacket {
             header,
@@ -518,7 +552,7 @@ fn read_qname(data: &[u8], pos: usize) -> ParseResult<String> {
 
 #[cfg(test)]
 mod tests {
-    use crate::parser::{DNSQuestion, DNSRecord, DNSRecordData};
+    use crate::parser::{DNSQuestion, DNSRecord, DNSRecordData, ResultCode};
 
     use super::{DNSHeader, DNSHeaderType, Parse, DNSQuestionsParser, DNSRecordsParser, DNSPacketParser};
 
@@ -538,7 +572,7 @@ mod tests {
             rd: true,
             ra: false,
             z: 2,
-            rcode: 0,
+            rcode: ResultCode::NoError,
             qdcount: 1,
             ancount: 0,
             nscount: 0,
@@ -562,7 +596,7 @@ mod tests {
             rd: true,
             ra: true,
             z: 0,
-            rcode: 0,
+            rcode: ResultCode::NoError,
             qdcount: 1,
             ancount: 1,
             nscount: 0,
