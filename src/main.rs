@@ -2,7 +2,9 @@ mod parser;
 
 use std::{fs, io};
 use std::net::UdpSocket;
-use parser::{DNSPacketParser, DNSPacket, DNSHeader, ResultCode, DNSHeaderType};
+// use parser::{DNSPacketParser, DNSPacket, DNSHeader, ResultCode, DNSHeaderType};
+
+// use parser::header::;
 
 fn main() {
     let socket = UdpSocket::bind("127.0.0.1:8080")
