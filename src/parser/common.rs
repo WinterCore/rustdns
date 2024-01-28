@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{VecDeque, HashMap};
 
 
 pub type ParseResult<T> = Result<(
@@ -9,6 +9,8 @@ pub type ParseResult<T> = Result<(
 pub trait Parse: Sized {
     fn parse(data: &[u8]) -> ParseResult<Self>;
 }
+
+pub struct DomainNameLabel {}
 
 impl DomainNameLabel {
     // TODO: Look into Punycode for parsing Unicode
@@ -67,7 +69,38 @@ impl DomainNameLabel {
         Ok((name, consumed_len))
     }
 
-    pub fn serialize(name:  ) {
+    pub fn serialize(name: &str) -> Result<(Vec<u8>, HashMap<String, usize>), String>  {
+        let mut rest = name;
+        let mut data = Vec::new();
+        let mut ptr_map = HashMap::new();
+        let mut ptr = 0;
+        
+        while ! rest.is_empty() {
+            ptr_map.insert(rest.to_owned(), ptr);
+
+            match rest.split_once('.') {
+                Some((part, remainder)) => {
+                    rest = remainder;
+
+                    if part.len() > 0b0011_1111 {
+                        return Err(format!("Domain label part {} exceeds the maximum length allowed", part));
+                    }
+
+                    data.push(part.len() as u8); // Push the length
+                    data.extend_from_slice(part.as_bytes());
+
+
+                    ptr += part.len() + 1;
+                },
+                None => return Err(format!("Invalid domain label {}", name)),
+            }
+        }
+
+
+        // Push null character
+        data.push(0);
+
+        Ok((data, ptr_map))
     }
 }
 

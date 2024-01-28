@@ -1,4 +1,4 @@
-use super::{header::DNSHeader, question::{DNSQuestion, DNSQuestionsParser}, record::{DNSRecord, DNSRecordsParser}, common::Parse};
+use super::{header::DNSHeader, question::{DNSQuestion, DNSQuestionsParser, DNSQuestionsSerializer}, record::{DNSRecord, DNSRecordsParser}, common::Parse};
 
 
 #[derive(Debug)]
@@ -8,6 +8,31 @@ pub struct DNSPacket {
     pub answers: Vec<DNSRecord>,
     pub authority: Vec<DNSRecord>,
     pub additional: Vec<DNSRecord>,
+}
+
+impl DNSPacket {
+    pub fn serialize(&self) -> Result<Vec<u8>, String> {
+        let mut data = Vec::new();
+
+        // Serialize Header
+        data.extend_from_slice(&self.header.serialize());
+
+        // Serialize Questions
+        let (
+            questions_data,
+            mut questions_label_ptr_map,
+        ) = DNSQuestionsSerializer::new(&self.questions).serialize()?;
+
+        let label_ptr_map = questions_label_ptr_map
+            .iter_mut()
+            .for_each(|(_, x)| *x += 12);
+
+        data.extend_from_slice(&questions_data);
+
+        // Serialize the rest
+
+        Ok(data)
+    }
 }
 
 pub struct DNSPacketParser<'data> {

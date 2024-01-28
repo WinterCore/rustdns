@@ -1,6 +1,6 @@
-use std::iter::Map;
+use std::{collections::HashMap};
 
-use super::common::{ParseResult, read_qname};
+use super::common::{ParseResult, DomainNameLabel};
 
 
 #[derive(Debug, PartialEq)]
@@ -40,7 +40,7 @@ impl<'data> DNSQuestionsParser<'data> {
     }
 
     fn parse_question(&self, ptr: usize) -> ParseResult<DNSQuestion> {
-        let (name, consumed_len) = read_qname(self.packet, ptr)?;
+        let (name, consumed_len) = DomainNameLabel::parse(self.packet, ptr)?;
         let end = ptr + consumed_len;
 
         Ok((
@@ -59,13 +59,24 @@ pub struct DNSQuestionsSerializer<'data> {
 }
 
 impl<'data> DNSQuestionsSerializer<'data> {
-    pub fn serialize(&self) -> (Vec<u8>, Map<String, usize>) {
-        let ptr: usize = 0;
+    pub fn new(dns_questions: &'data [DNSQuestion]) -> Self {
+        Self { dns_questions }
+    }
+
+    pub fn serialize(&self) -> Result<(Vec<u8>, HashMap<String, usize>), String> {
+        let mut ptr = 0;
+        let mut ptr_map = HashMap::new();
         let mut data = Vec::new();
 
         for question in self.dns_questions {
+            let (serialized_name, mut name_ptr_map) = DomainNameLabel::serialize(&question.name)?;
+            name_ptr_map.iter_mut().for_each(|(_, x)| *x += ptr);
+            ptr_map.extend(name_ptr_map);
+
+            data.extend_from_slice(&serialized_name);
+            ptr += serialized_name.len();
         }
 
-        ()
+        Ok((data, ptr_map))
     }
 }
