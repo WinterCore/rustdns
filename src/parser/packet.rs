@@ -1,4 +1,4 @@
-use super::{header::DNSHeader, question::{DNSQuestion, DNSQuestionsParser, DNSQuestionsSerializer}, record::{DNSRecord, DNSRecordsParser}, common::Parse};
+use super::{header::DNSHeader, question::{DNSQuestion, DNSQuestionParser, DNSQuestionSerializer}, record::{DNSRecord, DNSRecordsParser}, common::Parse};
 
 
 #[derive(Debug)]
@@ -13,23 +13,25 @@ pub struct DNSPacket {
 impl DNSPacket {
     pub fn serialize(&self) -> Result<Vec<u8>, String> {
         let mut data = Vec::new();
+        let mut ptr = 0;
 
         // Serialize Header
-        data.extend_from_slice(&self.header.serialize());
+        let serialized_header = self.header.serialize();
+        data.extend_from_slice(&serialized_header);
+        ptr += serialized_header.len();
 
         // Serialize Questions
         let (
             questions_data,
             mut questions_label_ptr_map,
-        ) = DNSQuestionsSerializer::new(&self.questions).serialize()?;
+        ) = DNSQuestionSerializer::new(&self.questions).serialize()?;
 
-        let label_ptr_map = questions_label_ptr_map
-            .iter_mut()
-            .for_each(|(_, x)| *x += 12);
-
+        questions_label_ptr_map.iter_mut().for_each(|(_, x)| *x += ptr);
         data.extend_from_slice(&questions_data);
+        ptr += questions_data.len();
 
         // Serialize the rest
+        println!("{:?}", questions_label_ptr_map);
 
         Ok(data)
     }
@@ -65,7 +67,7 @@ impl<'data> DNSPacketParser<'data> {
             return Ok(Vec::new());
         }
 
-        let (questions, questions_size) = DNSQuestionsParser::new(self.packet)
+        let (questions, questions_size) = DNSQuestionParser::new(self.packet)
            .parse(count, self.ptr)?;
 
         self.ptr += questions_size;

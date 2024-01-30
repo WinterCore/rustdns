@@ -145,7 +145,7 @@ impl Parse for DNSHeader {
         }
 
         // 2 bytes
-        let id = u16::from_le_bytes([data[1], data[0]]);
+        let id = u16::from_be_bytes([data[0], data[1]]);
 
         // 1 byte
             // 1 bit
@@ -168,16 +168,16 @@ impl Parse for DNSHeader {
         let rcode = (data[3] & 0b0000_1111) >> 0;
 
         // 2 bytes
-        let qdcount = u16::from_le_bytes([data[5], data[4]]);
+        let qdcount = u16::from_be_bytes([data[4], data[5]]);
 
         // 2 bytes
-        let ancount = u16::from_le_bytes([data[7], data[6]]);
+        let ancount = u16::from_be_bytes([data[6], data[7]]);
 
         // 2 bytes
-        let nscount = u16::from_le_bytes([data[9], data[8]]);
+        let nscount = u16::from_be_bytes([data[8], data[9]]);
 
         // 2 bytes
-        let arcount = u16::from_le_bytes([data[11], data[10]]);
+        let arcount = u16::from_be_bytes([data[10], data[11]]);
 
 
         let header = DNSHeader {
@@ -202,9 +202,9 @@ impl Parse for DNSHeader {
 
 impl DNSHeader {
     pub fn serialize(&self) -> Vec<u8> {
-        let mut data = vec![0u8; 12];
+        let mut data = Vec::with_capacity(12);
 
-        data.extend_from_slice(&self.id.to_le_bytes());
+        data.extend_from_slice(&self.id.to_be_bytes());
 
         data.push(
             ((Into::<usize>::into(self.qr) as u8) << 7) |
@@ -215,15 +215,15 @@ impl DNSHeader {
         );
 
         data.push(
-            Into::<u8>::into(self.ra)                << 7 |
+            Into::<u8>::into(self.ra)                << 7  |
             (self.z                                  << 4) |
             ((Into::<usize>::into(self.rcode) as u8) << 0)
         );
 
-        data.extend_from_slice(&self.qdcount.to_le_bytes());
-        data.extend_from_slice(&self.ancount.to_le_bytes());
-        data.extend_from_slice(&self.nscount.to_le_bytes());
-        data.extend_from_slice(&self.arcount.to_le_bytes());
+        data.extend_from_slice(&self.qdcount.to_be_bytes());
+        data.extend_from_slice(&self.ancount.to_be_bytes());
+        data.extend_from_slice(&self.nscount.to_be_bytes());
+        data.extend_from_slice(&self.arcount.to_be_bytes());
 
         data
     }

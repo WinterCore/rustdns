@@ -1,5 +1,6 @@
-use std::collections::{VecDeque, HashMap};
+use std::{collections::{VecDeque, HashMap}, str::pattern::Pattern};
 
+pub type LabelPtrMap = HashMap<String, usize>;
 
 pub type ParseResult<T> = Result<(
     T,     // Parsed object
@@ -51,8 +52,8 @@ impl DomainNameLabel {
             }
 
             // Is a pointer
-            if data[ptr] >> 6 == 0b11 {
-                let jumpptr = data[ptr + 1];
+            if data[ptr + 0] >> 6 == 0b11 {
+                let jumpptr = u16::from_be_bytes([data[ptr + 0], data[ptr + 1]]) & (! (0b11 << 14));
 
                 queue.push_back((jumpptr as usize, level + 1));
 
@@ -69,7 +70,17 @@ impl DomainNameLabel {
         Ok((name, consumed_len))
     }
 
-    pub fn serialize(name: &str) -> Result<(Vec<u8>, HashMap<String, usize>), String>  {
+    pub fn serialize(
+        name: &str,
+        label_ptr_map: Option<LabelPtrMap>,
+    ) -> Result<(Vec<u8>, LabelPtrMap), String>  {
+        if let Some(ptr) = label_ptr_map.and_then(|map| map.get(name)) {
+            // TODO: This is actually 2 bytes. refer to common.rs:56
+            let jumpbyte = (0b11 << 6) & ((*ptr as u8) & 0b00111111);
+
+            return ()
+        }
+
         let mut rest = name;
         let mut data = Vec::new();
         let mut ptr_map = HashMap::new();

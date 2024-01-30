@@ -1,4 +1,6 @@
-use super::common::{ParseResult, read_qname};
+use std::collections::HashMap;
+
+use super::{common::{ParseResult, DomainNameLabel}, LabelPtrMap};
 
 
 #[derive(Debug, PartialEq)]
@@ -47,21 +49,21 @@ impl<'data> DNSRecordsParser<'data> {
     }
 
     fn parse_record(&self, ptr: usize) -> ParseResult<DNSRecord> {
-        let (name, consumed_len) = read_qname(self.packet, ptr)?;
+        let (name, consumed_len) = DomainNameLabel::parse(self.packet, ptr)?;
         let end = ptr + consumed_len;
 
-        let rtype = u16::from_le_bytes([self.packet[end + 1], self.packet[end + 0]]);
-        let class = u16::from_le_bytes([self.packet[end + 3], self.packet[end + 2]]);
-        let ttl = u32::from_le_bytes([
-            self.packet[end + 7],
-            self.packet[end + 6],
-            self.packet[end + 5],
+        let rtype = u16::from_be_bytes([self.packet[end + 0], self.packet[end + 1]]);
+        let class = u16::from_be_bytes([self.packet[end + 2], self.packet[end + 3]]);
+        let ttl = u32::from_be_bytes([
             self.packet[end + 4],
+            self.packet[end + 5],
+            self.packet[end + 6],
+            self.packet[end + 7],
         ]);
 
-        let len = u16::from_le_bytes([
-            self.packet[end + 9],
+        let len = u16::from_be_bytes([
             self.packet[end + 8],
+            self.packet[end + 9],
         ]);
 
         let (record, record_len) = self.parse_record_data(
@@ -92,16 +94,11 @@ impl<'data> DNSRecordsParser<'data> {
         match rtype {
             1 => {
                 if len == 4 {
-                    let ip = [
-                        self.packet[ptr + 0],
-                        self.packet[ptr + 1],
-                        self.packet[ptr + 2],
-                        self.packet[ptr + 3],
-                    ];
-
-                    return Ok((DNSRecordData::A { ip }, 4))
+                    let record_data = DNSRecordData::A(DNSARecord::parse(&self.packet[ptr..(ptr + 4)])?);
+                    return Ok((record_data, 4))
                 }
 
+                // TODO: Move into record parsers
                 Err(format!("DNSRecordsParser: invalid A record length {}", len))
             },
             _ => {
@@ -112,11 +109,46 @@ impl<'data> DNSRecordsParser<'data> {
 }
 
 #[derive(Debug, PartialEq)]
+struct DNSARecord { ip: [u8; 4] }
+
+impl DNSARecord {
+    fn parse(data: &[u8]) -> Result<Self, String> {
+        let ip = [data[0], data[1], data[2], data[3]];
+
+        return Ok(Self { ip })
+    }
+}
+
+#[derive(Debug, PartialEq)]
 pub enum DNSRecordData {
-    A {
-        ip: [u8; 4],
-    },
+    A(DNSARecord),
     Unknown {
         data: Vec<u8>,
     },
+}
+
+pub struct DNSRecordSerializer<'data, 'lmap> {
+    records: &'data [DNSRecord],
+    label_ptr_map: &'lmap LabelPtrMap,
+}
+
+impl<'data, 'lmap> DNSRecordSerializer<'data, 'lmap> {
+    pub fn new(
+        records: &'data [DNSRecord],
+        label_ptr_map: &'lmap HashMap<String, usize>,
+    ) -> Self {
+        Self { records, label_ptr_map }
+    }
+
+    pub fn serialize(&self) -> Result<(Vec<u8>, LabelPtrMap), String> {
+        let mut ptr = 0;
+        let mut ptr_map = HashMap::new();
+        let mut data = Vec::new();
+
+        for record in self.records {
+            // Serialize the name
+        }
+
+        Ok((data, ptr_map))
+    }
 }
