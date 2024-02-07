@@ -1,7 +1,7 @@
 
 use crate::parser::common::{Parse, ParseResult};
 
-#[derive(Debug, PartialEq, Copy, Clone)]
+#[derive(Debug, PartialEq, Eq, Copy, Clone)]
 pub enum DNSHeaderType {
     Query = 0,
     Response = 1,
@@ -96,7 +96,7 @@ impl From<usize> for ResultCode {
     }
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DNSHeader {
     /// Packet Identifier (16 bits)
     pub id: u16,

@@ -1,9 +1,15 @@
 use std::collections::HashMap;
 
+use self::{unknown_record::DNSUnknownRecord, a_record::DNSARecord};
+
 use super::{common::{ParseResult, DomainNameLabel}, LabelPtrMap};
 
+mod a_record;
+mod soa_record;
+mod unknown_record;
 
-#[derive(Debug, PartialEq)]
+
+#[derive(Debug, PartialEq, Eq)]
 pub struct DNSRecord {
     /// Domain name
     pub name: String,
@@ -102,53 +108,65 @@ impl<'data> DNSRecordsParser<'data> {
                 Err(format!("DNSRecordsParser: invalid A record length {}", len))
             },
             _ => {
-                Ok((DNSRecordData::Unknown { data: self.packet[ptr..(ptr + len)].to_owned() }, len))
+                Ok((DNSRecordData::Unknown(DNSUnknownRecord::parse(&self.packet[ptr..(ptr + len)])?), len))
             },
         }
     }
 }
 
-#[derive(Debug, PartialEq)]
-struct DNSARecord { ip: [u8; 4] }
-
-impl DNSARecord {
-    fn parse(data: &[u8]) -> Result<Self, String> {
-        let ip = [data[0], data[1], data[2], data[3]];
-
-        return Ok(Self { ip })
-    }
-}
-
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum DNSRecordData {
     A(DNSARecord),
-    Unknown {
-        data: Vec<u8>,
-    },
+    Unknown(DNSUnknownRecord),
+}
+
+impl DNSRecordData {
+    fn serialize(&self) -> Vec<u8> {
+        match self {
+            Self::A(record) => record.serialize(),
+            Self::Unknown(record) => record.serialize(),
+        }
+    }
 }
 
 pub struct DNSRecordSerializer<'data, 'lmap> {
     records: &'data [DNSRecord],
-    label_ptr_map: &'lmap LabelPtrMap,
+    label_ptr_map: &'lmap mut LabelPtrMap,
+    ptr: usize,
 }
 
 impl<'data, 'lmap> DNSRecordSerializer<'data, 'lmap> {
     pub fn new(
         records: &'data [DNSRecord],
-        label_ptr_map: &'lmap HashMap<String, usize>,
+        label_ptr_map: &'lmap mut HashMap<String, usize>,
+        ptr: usize,
     ) -> Self {
-        Self { records, label_ptr_map }
+        Self { records, label_ptr_map, ptr }
     }
 
-    pub fn serialize(&self) -> Result<(Vec<u8>, LabelPtrMap), String> {
+    pub fn serialize(&mut self) -> Result<Vec<u8>, String> {
         let mut ptr = 0;
-        let mut ptr_map = HashMap::new();
         let mut data = Vec::new();
 
         for record in self.records {
-            // Serialize the name
+            let (name, mut label_ptr_map) = DomainNameLabel::serialize(
+                &record.name,
+                Some(self.label_ptr_map),
+            )?;
+
+            label_ptr_map.iter_mut().for_each(|(_, x)| *x += ptr + self.ptr);
+            self.label_ptr_map.extend(label_ptr_map);
+
+            data.extend_from_slice(&name);
+            data.extend_from_slice(&record.rtype.to_be_bytes());
+            data.extend_from_slice(&record.class.to_be_bytes());
+            data.extend_from_slice(&record.ttl.to_be_bytes());
+            data.extend_from_slice(&record.len.to_be_bytes());
+            data.extend_from_slice(&record.record.serialize());
+
+            ptr += name.len() + 2 + 2 + 4 + 2 + record.len as usize;
         }
 
-        Ok((data, ptr_map))
+        Ok(data)
     }
 }

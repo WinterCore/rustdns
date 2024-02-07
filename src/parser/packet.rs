@@ -1,7 +1,9 @@
-use super::{header::DNSHeader, question::{DNSQuestion, DNSQuestionParser, DNSQuestionSerializer}, record::{DNSRecord, DNSRecordsParser}, common::Parse};
+use std::collections::HashMap;
+
+use super::{header::DNSHeader, question::{DNSQuestion, DNSQuestionParser, DNSQuestionSerializer}, record::{DNSRecord, DNSRecordsParser, DNSRecordSerializer}, common::Parse, LabelPtrMap};
 
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DNSPacket {
     pub header: DNSHeader,
     pub questions: Vec<DNSQuestion>,
@@ -17,21 +19,47 @@ impl DNSPacket {
 
         // Serialize Header
         let serialized_header = self.header.serialize();
+        let mut label_ptr_map: LabelPtrMap = HashMap::new();
+
         data.extend_from_slice(&serialized_header);
         ptr += serialized_header.len();
 
-        // Serialize Questions
-        let (
-            questions_data,
-            mut questions_label_ptr_map,
-        ) = DNSQuestionSerializer::new(&self.questions).serialize()?;
 
-        questions_label_ptr_map.iter_mut().for_each(|(_, x)| *x += ptr);
+        // Serialize Questions
+        let questions_data = DNSQuestionSerializer::new(
+            &self.questions,
+            &mut label_ptr_map,
+            ptr,
+        ).serialize()?;
+
         data.extend_from_slice(&questions_data);
         ptr += questions_data.len();
+        
+        let answers_data = DNSRecordSerializer::new(
+            &self.answers,
+            &mut label_ptr_map,
+            ptr,
+        ).serialize()?;
 
-        // Serialize the rest
-        println!("{:?}", questions_label_ptr_map);
+        data.extend_from_slice(&answers_data);
+        ptr += answers_data.len();
+
+        let authority_data = DNSRecordSerializer::new(
+            &self.authority,
+            &mut label_ptr_map,
+            ptr
+        ).serialize()?;
+
+        data.extend_from_slice(&authority_data);
+        ptr += authority_data.len();
+
+        let additional_data = DNSRecordSerializer::new(
+            &self.additional,
+            &mut label_ptr_map,
+            ptr
+        ).serialize()?;
+
+        data.extend_from_slice(&additional_data);
 
         Ok(data)
     }
@@ -97,5 +125,101 @@ impl<'data> DNSPacketParser<'data> {
             authority,
             additional,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::fs;
+
+    use crate::parser::{packet::DNSPacket, header::{DNSHeader, DNSHeaderType, ResultCode}, question::DNSQuestion};
+
+    use super::DNSPacketParser;
+
+    #[test]
+    fn parses_and_serializes_simple_query_packet() {
+        let query_packet_raw = fs::read("./samples/query_packet.bin")
+            .expect("Should read query_packet sample file");
+
+        let parsed_packet = DNSPacketParser::new(&query_packet_raw)
+            .parse();
+
+        assert_eq!(
+            Ok(DNSPacket {
+                header: DNSHeader {
+                    id: 34534,
+                    qr: DNSHeaderType::Query,
+                    opcode: 0,
+                    aa: false,
+                    tc: false,
+                    rd: true,
+                    ra: false,
+                    z: 2,
+                    rcode: ResultCode::NoError,
+                    qdcount: 1,
+                    ancount: 0,
+                    nscount: 0,
+                    arcount: 0,
+                },
+                questions: vec![
+                    DNSQuestion {
+                        name: "google.com.".to_owned(),
+                        rtype: 1,
+                        class: 1,
+                    },
+                ],
+                answers: vec![],
+                authority: vec![],
+                additional: vec![],
+            }),
+            parsed_packet,
+        );
+
+        assert_eq!(
+            Ok(query_packet_raw),
+            parsed_packet.and_then(|p| p.serialize()),
+        );
+    }
+
+    #[test]
+    fn parses_and_serializes_complex_response_packet() {
+        let response_packet_raw = fs::read("./samples/response_packet_big.bin")
+            .expect("Should read response_packet_big sample file");
+
+        let parsed_packet = DNSPacketParser::new(&response_packet_raw)
+            .parse();
+
+        /*
+        assert_eq!(
+            Ok(DNSPacket {
+                header: DNSHeader {
+                    id: 34534,
+                    qr: DNSHeaderType::Query,
+                    opcode: 0,
+                    aa: false,
+                    tc: false,
+                    rd: true,
+                    ra: false,
+                    z: 2,
+                    rcode: ResultCode::NoError,
+                    qdcount: 1,
+                    ancount: 0,
+                    nscount: 0,
+                    arcount: 0,
+                },
+                questions: vec![
+                    DNSQuestion {
+                        name: "google.com.".to_owned(),
+                        rtype: 1,
+                        class: 1,
+                    },
+                ],
+                answers: vec![],
+                authority: vec![],
+                additional: vec![],
+            }),
+            parsed_packet,
+        );
+        */
     }
 }

@@ -1,4 +1,4 @@
-use std::{collections::{VecDeque, HashMap}, str::pattern::Pattern};
+use std::collections::{VecDeque, HashMap};
 
 pub type LabelPtrMap = HashMap<String, usize>;
 
@@ -72,13 +72,12 @@ impl DomainNameLabel {
 
     pub fn serialize(
         name: &str,
-        label_ptr_map: Option<LabelPtrMap>,
+        label_ptr_map: Option<&LabelPtrMap>,
     ) -> Result<(Vec<u8>, LabelPtrMap), String>  {
         if let Some(ptr) = label_ptr_map.and_then(|map| map.get(name)) {
-            // TODO: This is actually 2 bytes. refer to common.rs:56
-            let jumpbyte = (0b11 << 6) & ((*ptr as u8) & 0b00111111);
+            let jumpbytes = (*ptr as u16) | (0b11 << 14);
 
-            return ()
+            return Ok((Vec::from(jumpbytes.to_be_bytes()), HashMap::new()))
         }
 
         let mut rest = name;

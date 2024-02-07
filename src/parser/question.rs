@@ -3,7 +3,7 @@ use std::{collections::HashMap};
 use super::{common::{ParseResult, DomainNameLabel}, LabelPtrMap};
 
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Eq)]
 pub struct DNSQuestion {
     /// Domain name
     pub name: String,
@@ -54,24 +54,29 @@ impl<'data> DNSQuestionParser<'data> {
     }
 }
 
-pub struct DNSQuestionSerializer<'data> {
+pub struct DNSQuestionSerializer<'data, 'lmap> {
     dns_questions: &'data [DNSQuestion],
+    label_ptr_map: &'lmap mut LabelPtrMap,
+    ptr: usize,
 }
 
-impl<'data> DNSQuestionSerializer<'data> {
-    pub fn new(dns_questions: &'data [DNSQuestion]) -> Self {
-        Self { dns_questions }
+impl<'data, 'lmap> DNSQuestionSerializer<'data, 'lmap> {
+    pub fn new(
+        dns_questions: &'data [DNSQuestion],
+        label_ptr_map: &'lmap mut LabelPtrMap,
+        ptr: usize,
+    ) -> Self {
+        Self { dns_questions, label_ptr_map, ptr }
     }
 
-    pub fn serialize(&self) -> Result<(Vec<u8>, LabelPtrMap), String> {
+    pub fn serialize(&mut self) -> Result<Vec<u8>, String> {
         let mut ptr = 0;
-        let mut ptr_map = HashMap::new();
         let mut data = Vec::new();
 
         for question in self.dns_questions {
-            let (serialized_name, mut name_ptr_map) = DomainNameLabel::serialize(&question.name, None)?;
-            name_ptr_map.iter_mut().for_each(|(_, x)| *x += ptr);
-            ptr_map.extend(name_ptr_map);
+            let (serialized_name, mut name_ptr_map) = DomainNameLabel::serialize(&question.name, Some(&self.label_ptr_map))?;
+            name_ptr_map.iter_mut().for_each(|(_, x)| *x += ptr + self.ptr);
+            self.label_ptr_map.extend(name_ptr_map);
 
             data.extend_from_slice(&serialized_name);
             data.extend_from_slice(&question.rtype.to_be_bytes());
@@ -80,6 +85,6 @@ impl<'data> DNSQuestionSerializer<'data> {
             ptr += serialized_name.len() + 2 + 2;
         }
 
-        Ok((data, ptr_map))
+        Ok(data)
     }
 }
