@@ -1,4 +1,6 @@
-use crate::parser::common::DomainNameLabel;
+use crate::parser::{common::DomainNameLabel, LabelPtrMap};
+
+use super::DNSRecordPack;
 
 
 #[derive(Debug, PartialEq, Eq)]
@@ -12,8 +14,14 @@ pub struct DNSSOARecord {
     minimum: u32,
 }
 
-impl DNSSOARecord {
-    pub fn parse(data: &[u8], startptr: usize) -> Result<Self, String> {
+impl DNSRecordPack for DNSSOARecord {
+    const RTYPE: usize = 6;
+
+    fn parse(
+        data: &[u8],
+        startptr: usize,
+        _len: usize,
+    ) -> Result<Self, String> where Self: Sized {
         let mut ptr = startptr;
         let (mname, consumed_len) = DomainNameLabel::parse(data, ptr)?;
         ptr += consumed_len;
@@ -47,7 +55,35 @@ impl DNSSOARecord {
         })
     }
 
-    pub fn serialize(&self) -> Vec<u8> {
-        vec![]
+    fn serialize(
+        &self,
+        label_ptr_map: &mut LabelPtrMap,
+        ptr: usize,
+    ) -> Result<Vec<u8>, String> {
+        let mut data: Vec<u8> = vec![];
+
+        let (mname_bytes, mut temp_label_ptr_map) = DomainNameLabel::serialize(
+            &self.mname,
+            Some(&label_ptr_map),
+        )?;
+        data.extend_from_slice(&mname_bytes);
+        temp_label_ptr_map.iter_mut().for_each(|(_, x)| *x += ptr + data.len());
+        label_ptr_map.extend(temp_label_ptr_map);
+
+        let (rname_bytes, mut temp_label_ptr_map) = DomainNameLabel::serialize(
+            &self.rname,
+            Some(&label_ptr_map),
+        )?;
+        data.extend_from_slice(&rname_bytes);
+        temp_label_ptr_map.iter_mut().for_each(|(_, x)| *x += ptr + data.len());
+        label_ptr_map.extend(temp_label_ptr_map);
+
+        data.extend_from_slice(&self.serial.to_be_bytes());
+        data.extend_from_slice(&self.refresh.to_be_bytes());
+        data.extend_from_slice(&self.retry.to_be_bytes());
+        data.extend_from_slice(&self.expire.to_be_bytes());
+        data.extend_from_slice(&self.minimum.to_be_bytes());
+
+        Ok(data)
     }
 }

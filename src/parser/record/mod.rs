@@ -1,12 +1,30 @@
 use std::collections::HashMap;
 
-use self::{unknown_record::DNSUnknownRecord, a_record::DNSARecord};
+use self::{a_record::DNSARecord, ns_record::DNSNSRecord, soa_record::DNSSOARecord, unknown_record::DNSUnknownRecord, aaaa_record::DNSAAAARecord};
 
 use super::{common::{ParseResult, DomainNameLabel}, LabelPtrMap};
 
 mod a_record;
+mod ns_record;
 mod soa_record;
+mod aaaa_record;
 mod unknown_record;
+
+pub trait DNSRecordPack {
+    const RTYPE: usize;
+
+    fn parse(
+        data: &[u8],
+        startptr: usize,
+        len: usize,
+    ) -> Result<Self, String> where Self: Sized;
+
+    fn serialize(
+        &self,
+        label_ptr_map: &mut LabelPtrMap,
+        ptr: usize,
+    ) -> Result<Vec<u8>, String>;
+}
 
 
 #[derive(Debug, PartialEq, Eq)]
@@ -97,18 +115,42 @@ impl<'data> DNSRecordsParser<'data> {
         len: usize,
         ptr: usize,
     ) -> ParseResult<DNSRecordData> {
-        match rtype {
-            1 => {
-                if len == 4 {
-                    let record_data = DNSRecordData::A(DNSARecord::parse(&self.packet[ptr..(ptr + 4)])?);
-                    return Ok((record_data, 4))
-                }
 
-                // TODO: Move into record parsers
-                Err(format!("DNSRecordsParser: invalid A record length {}", len))
+        // TODO: Find a way to refactor this
+        match rtype as usize {
+            DNSARecord::RTYPE => {
+                let record_data = DNSRecordData::A(
+                    DNSARecord::parse(&self.packet, ptr, len)?
+                );
+                return Ok((record_data, len))
+            },
+            DNSNSRecord::RTYPE => {
+                let record_data = DNSRecordData::NS(
+                    DNSNSRecord::parse(&self.packet, ptr, len)?
+                );
+                return Ok((record_data, len))
+            },
+            DNSSOARecord::RTYPE => {
+                let record_data = DNSRecordData::SOA(
+                    DNSSOARecord::parse(self.packet, ptr, len)?
+                );
+
+                Ok((record_data, len))
+            },
+            DNSAAAARecord::RTYPE => {
+                let record_data = DNSRecordData::AAAA(
+                    DNSAAAARecord::parse(self.packet, ptr, len)?
+                );
+
+                Ok((record_data, len))
             },
             _ => {
-                Ok((DNSRecordData::Unknown(DNSUnknownRecord::parse(&self.packet[ptr..(ptr + len)])?), len))
+                Ok((
+                    DNSRecordData::Unknown(
+                        DNSUnknownRecord::parse(&self.packet, ptr, len)?
+                    ),
+                    len
+                ))
             },
         }
     }
@@ -117,15 +159,24 @@ impl<'data> DNSRecordsParser<'data> {
 #[derive(Debug, PartialEq, Eq)]
 pub enum DNSRecordData {
     A(DNSARecord),
+    NS(DNSNSRecord),
+    SOA(DNSSOARecord),
+    AAAA(DNSAAAARecord),
     Unknown(DNSUnknownRecord),
 }
 
 impl DNSRecordData {
     fn serialize(&self) -> Vec<u8> {
+        /*
         match self {
             Self::A(record) => record.serialize(),
+            Self::NS(record) => record.serialize(),
             Self::Unknown(record) => record.serialize(),
+            Self::SOA(record) => record.serialize(),
         }
+        */
+
+        vec![]
     }
 }
 

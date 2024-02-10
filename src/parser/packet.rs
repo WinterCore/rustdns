@@ -183,12 +183,13 @@ mod tests {
 
     #[test]
     fn parses_and_serializes_complex_response_packet() {
-        let response_packet_raw = fs::read("./samples/response_packet_big.bin")
+        let response_packet_raw = fs::read("./samples/response_packet_huge.bin")
             .expect("Should read response_packet_big sample file");
 
         let parsed_packet = DNSPacketParser::new(&response_packet_raw)
             .parse();
 
+        println!("Parsed: {:#?}", parsed_packet);
         /*
         assert_eq!(
             Ok(DNSPacket {
