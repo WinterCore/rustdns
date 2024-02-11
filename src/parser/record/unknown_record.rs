@@ -8,7 +8,7 @@ pub struct DNSUnknownRecord {
 }
 
 impl DNSRecordPack for DNSUnknownRecord {
-    const RTYPE: usize = 0;
+    const RTYPE: u16 = 0;
 
     fn parse(
         data: &[u8],

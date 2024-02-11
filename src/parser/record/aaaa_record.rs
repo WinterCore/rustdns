@@ -10,7 +10,7 @@ pub struct DNSAAAARecord {
 }
 
 impl DNSRecordPack for DNSAAAARecord {
-    const RTYPE: usize = 28;
+    const RTYPE: u16 = 28;
 
     fn parse(
         data: &[u8],

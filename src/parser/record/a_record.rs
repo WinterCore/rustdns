@@ -6,7 +6,7 @@ use super::DNSRecordPack;
 pub struct DNSARecord { ip: [u8; 4] }
 
 impl DNSRecordPack for DNSARecord {
-    const RTYPE: usize = 1;
+    const RTYPE: u16 = 1;
 
     fn parse(
         data: &[u8],

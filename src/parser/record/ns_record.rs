@@ -9,7 +9,7 @@ pub struct DNSNSRecord {
 }
 
 impl DNSRecordPack for DNSNSRecord {
-    const RTYPE: usize = 2;
+    const RTYPE: u16 = 2;
 
     fn parse(
         data: &[u8],

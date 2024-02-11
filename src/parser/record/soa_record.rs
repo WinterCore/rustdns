@@ -15,7 +15,7 @@ pub struct DNSSOARecord {
 }
 
 impl DNSRecordPack for DNSSOARecord {
-    const RTYPE: usize = 6;
+    const RTYPE: u16 = 6;
 
     fn parse(
         data: &[u8],
@@ -66,16 +66,16 @@ impl DNSRecordPack for DNSSOARecord {
             &self.mname,
             Some(&label_ptr_map),
         )?;
-        data.extend_from_slice(&mname_bytes);
         temp_label_ptr_map.iter_mut().for_each(|(_, x)| *x += ptr + data.len());
+        data.extend_from_slice(&mname_bytes);
         label_ptr_map.extend(temp_label_ptr_map);
 
         let (rname_bytes, mut temp_label_ptr_map) = DomainNameLabel::serialize(
             &self.rname,
             Some(&label_ptr_map),
         )?;
-        data.extend_from_slice(&rname_bytes);
         temp_label_ptr_map.iter_mut().for_each(|(_, x)| *x += ptr + data.len());
+        data.extend_from_slice(&rname_bytes);
         label_ptr_map.extend(temp_label_ptr_map);
 
         data.extend_from_slice(&self.serial.to_be_bytes());

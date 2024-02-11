@@ -1,17 +1,27 @@
 use std::collections::HashMap;
 
-use self::{a_record::DNSARecord, ns_record::DNSNSRecord, soa_record::DNSSOARecord, unknown_record::DNSUnknownRecord, aaaa_record::DNSAAAARecord};
-
 use super::{common::{ParseResult, DomainNameLabel}, LabelPtrMap};
 
 mod a_record;
 mod ns_record;
+mod cname_record;
 mod soa_record;
+mod mx_record;
+mod txt_record;
 mod aaaa_record;
 mod unknown_record;
 
+pub use a_record::DNSARecord;
+pub use ns_record::DNSNSRecord;
+pub use cname_record::DNSCNameRecord;
+pub use soa_record::DNSSOARecord;
+pub use mx_record::DNSMXRecord;
+pub use txt_record::DNSTXTRecord;
+pub use aaaa_record::DNSAAAARecord;
+pub use unknown_record::DNSUnknownRecord;
+
 pub trait DNSRecordPack {
-    const RTYPE: usize;
+    const RTYPE: u16;
 
     fn parse(
         data: &[u8],
@@ -117,7 +127,7 @@ impl<'data> DNSRecordsParser<'data> {
     ) -> ParseResult<DNSRecordData> {
 
         // TODO: Find a way to refactor this
-        match rtype as usize {
+        match rtype {
             DNSARecord::RTYPE => {
                 let record_data = DNSRecordData::A(
                     DNSARecord::parse(&self.packet, ptr, len)?
@@ -130,9 +140,29 @@ impl<'data> DNSRecordsParser<'data> {
                 );
                 return Ok((record_data, len))
             },
+            DNSCNameRecord::RTYPE => {
+                let record_data = DNSRecordData::CNAME(
+                    DNSCNameRecord::parse(&self.packet, ptr, len)?
+                );
+                return Ok((record_data, len))
+            },
             DNSSOARecord::RTYPE => {
                 let record_data = DNSRecordData::SOA(
                     DNSSOARecord::parse(self.packet, ptr, len)?
+                );
+
+                Ok((record_data, len))
+            },
+            DNSMXRecord::RTYPE => {
+                let record_data = DNSRecordData::MX(
+                    DNSMXRecord::parse(self.packet, ptr, len)?
+                );
+
+                Ok((record_data, len))
+            },
+            DNSTXTRecord::RTYPE => {
+                let record_data = DNSRecordData::TXT(
+                    DNSTXTRecord::parse(self.packet, ptr, len)?
                 );
 
                 Ok((record_data, len))
@@ -160,7 +190,10 @@ impl<'data> DNSRecordsParser<'data> {
 pub enum DNSRecordData {
     A(DNSARecord),
     NS(DNSNSRecord),
+    CNAME(DNSCNameRecord),
     SOA(DNSSOARecord),
+    MX(DNSMXRecord),
+    TXT(DNSTXTRecord),
     AAAA(DNSAAAARecord),
     Unknown(DNSUnknownRecord),
 }
@@ -168,6 +201,8 @@ pub enum DNSRecordData {
 impl DNSRecordData {
     fn serialize(&self) -> Vec<u8> {
         /*
+        let record: impl DNSRecordPack = self.into();
+
         match self {
             Self::A(record) => record.serialize(),
             Self::NS(record) => record.serialize(),

@@ -10,6 +10,8 @@ use parser::question::DNSQuestion;
 
 use crate::parser::Parse;
 use crate::parser::packet::DNSPacketParser;
+use crate::parser::record::DNSTXTRecord;
+use crate::parser::record::DNSRecordPack;
 // use parser::{DNSPacketParser, DNSPacket, DNSHeader, ResultCode, DNSHeaderType};
 
 // use parser::header::;
@@ -17,8 +19,6 @@ use crate::parser::packet::DNSPacketParser;
 fn main() {
     let socket = UdpSocket::bind("0.0.0.0:34000")
         .expect("Should create socket");
-
-    // socket.connect("8.8.8.8:53").expect("Should connect");
 
     let query_packet = DNSPacket {
         header: DNSHeader {
@@ -38,8 +38,8 @@ fn main() {
         },
         questions: vec![
             DNSQuestion {
-                name: "google.com.".to_owned(),
-                rtype: 1,
+                name: "yahoo.com.".to_owned(),
+                rtype: DNSTXTRecord::RTYPE,
                 class: 1,
             },
         ],
@@ -48,11 +48,12 @@ fn main() {
         additional: vec![],
     };
     
-    socket.connect("8.8.8.8:53").unwrap();
+    socket.connect("68.180.131.16:53").unwrap();
     println!("Connected");
     let result = socket.send(&query_packet.serialize().unwrap());
     println!("Result: {:?}", result);
 
+    println!("{:?}", query_packet.serialize());
     let mut buf: Vec<u8> = vec![0; 65_535];
     let res_size = socket.recv(&mut buf)
         .expect("Should receive response");
@@ -60,5 +61,5 @@ fn main() {
     println!("Received {} bytes: {:?}", res_size, buf.iter().take(res_size).collect::<Vec<&u8>>());
 
     let response = DNSPacketParser::new(&buf).parse().unwrap();
-    println!("Response {:?}", response);
+    println!("Response {:#?}", response);
 }
