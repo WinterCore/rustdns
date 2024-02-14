@@ -74,20 +74,21 @@ impl DomainNameLabel {
         name: &str,
         label_ptr_map: Option<&LabelPtrMap>,
     ) -> Result<(Vec<u8>, LabelPtrMap), String>  {
-        if let Some(ptr) = label_ptr_map.and_then(|map| map.get(name)) {
-            let jumpbytes = (*ptr as u16) | (0b11 << 14);
-
-            return Ok((Vec::from(jumpbytes.to_be_bytes()), HashMap::new()))
-        }
-
         let mut rest = name;
         let mut data = Vec::new();
         let mut ptr_map = HashMap::new();
         let mut ptr = 0;
         
         while ! rest.is_empty() {
-            ptr_map.insert(rest.to_owned(), ptr);
+            if let Some(ptr) = label_ptr_map.and_then(|map| map.get(rest)) {
+                let jumpbytes = (*ptr as u16) | (0b11 << 14);
 
+                data.extend_from_slice(&jumpbytes.to_be_bytes());
+
+                return Ok((data, ptr_map))
+            }
+
+            ptr_map.insert(rest.to_owned(), ptr);
             match rest.split_once('.') {
                 Some((part, remainder)) => {
                     rest = remainder;

@@ -35,7 +35,21 @@ impl DNSRecordPack for DNSTXTRecord {
         _label_ptr_map: &mut crate::parser::LabelPtrMap,
         _ptr: usize,
     ) -> Result<Vec<u8>, String> {
-        // TODO: Implement serialization
-        Ok(vec![])
+        let mut data: Vec<u8> = vec![];
+        let mut str_ptr: usize = 0;
+
+        let str_bytes = self.text.as_bytes();
+        let total_len = self.text.len();
+
+        while str_ptr < total_len {
+            let seg_len = total_len.min(255);
+
+            data.push(seg_len as u8);
+            data.extend_from_slice(&str_bytes[str_ptr..(str_ptr + seg_len)]);
+
+            str_ptr += seg_len;
+        }
+
+        Ok(data)
     }
 }

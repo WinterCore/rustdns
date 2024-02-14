@@ -196,22 +196,23 @@ pub enum DNSRecordData {
     TXT(DNSTXTRecord),
     AAAA(DNSAAAARecord),
     Unknown(DNSUnknownRecord),
+
+
+    // Wildcard is 255
 }
 
 impl DNSRecordData {
-    fn serialize(&self) -> Vec<u8> {
-        /*
-        let record: impl DNSRecordPack = self.into();
-
+    fn serialize(&self, label_ptr_map: &mut LabelPtrMap, startptr: usize) -> Result<Vec<u8>, String> {
         match self {
-            Self::A(record) => record.serialize(),
-            Self::NS(record) => record.serialize(),
-            Self::Unknown(record) => record.serialize(),
-            Self::SOA(record) => record.serialize(),
+            Self::A(record) => record.serialize(label_ptr_map, startptr),
+            Self::NS(record) => record.serialize(label_ptr_map, startptr),
+            Self::CNAME(record) => record.serialize(label_ptr_map, startptr),
+            Self::SOA(record) => record.serialize(label_ptr_map, startptr),
+            Self::MX(record) => record.serialize(label_ptr_map, startptr),
+            Self::TXT(record) => record.serialize(label_ptr_map, startptr),
+            Self::AAAA(record) => record.serialize(label_ptr_map, startptr),
+            Self::Unknown(record) => record.serialize(label_ptr_map, startptr),
         }
-        */
-
-        vec![]
     }
 }
 
@@ -248,7 +249,7 @@ impl<'data, 'lmap> DNSRecordSerializer<'data, 'lmap> {
             data.extend_from_slice(&record.class.to_be_bytes());
             data.extend_from_slice(&record.ttl.to_be_bytes());
             data.extend_from_slice(&record.len.to_be_bytes());
-            data.extend_from_slice(&record.record.serialize());
+            data.extend_from_slice(&record.record.serialize(self.label_ptr_map, data.len())?);
 
             ptr += name.len() + 2 + 2 + 4 + 2 + record.len as usize;
         }

@@ -39,7 +39,7 @@ fn main() {
         questions: vec![
             DNSQuestion {
                 name: "yahoo.com.".to_owned(),
-                rtype: DNSTXTRecord::RTYPE,
+                rtype: 255,
                 class: 1,
             },
         ],
@@ -60,6 +60,12 @@ fn main() {
 
     println!("Received {} bytes: {:?}", res_size, buf.iter().take(res_size).collect::<Vec<&u8>>());
 
-    let response = DNSPacketParser::new(&buf).parse().unwrap();
-    println!("Response {:#?}", response);
+    let dnspacket = DNSPacketParser::new(&buf).parse().unwrap();
+    println!("Response {:#?}", dnspacket);
+
+    let serialized = dnspacket.serialize();
+
+    fs::write("./ours", serialized.as_ref().unwrap()).expect("File should be written");
+    fs::write("./theirs", &buf[0..res_size]).expect("File should be written");
+    assert_eq!(&buf[0..res_size], serialized.unwrap());
 }
