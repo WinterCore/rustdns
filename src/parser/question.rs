@@ -3,7 +3,7 @@ use std::{collections::HashMap};
 use super::{common::{ParseResult, DomainNameLabel}, LabelPtrMap};
 
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DNSQuestion {
     /// Domain name
     pub name: String,
