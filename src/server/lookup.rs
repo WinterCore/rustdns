@@ -1,4 +1,5 @@
 use std::net::{SocketAddr, UdpSocket};
+use std::fs;
 
 use crate::parser::{header::{DNSHeader, DNSHeaderType, ResultCode}, packet::{DNSPacket, DNSPacketParser}, question::DNSQuestion};
 
@@ -47,10 +48,17 @@ pub fn lookup(server: SocketAddr, qname: &str, qtype: u16) -> Result<DNSPacket, 
     let mut res_buffer = [0u8; 66_000];
     let bytes_received = socket.recv(&mut res_buffer)
         .map_err(|e| format!("Failed to receive response from {}, {}", server, e))?;
-    
 
     // println!("Bytes received {:?}", bytes_received);
     let resp_packet = DNSPacketParser::new(&res_buffer[0..bytes_received]).parse()?;
     
     Ok(resp_packet)
+}
+
+
+pub fn lookup_recursively(qname: &str, qtype: u16) -> Result<DNSPacket, String> {
+    let resp = lookup(server, qname, qtype)
+    
+    loop {
+    }
 }
