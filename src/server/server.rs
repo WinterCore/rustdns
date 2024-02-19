@@ -1,14 +1,8 @@
-use std::net::{Ipv4Addr, SocketAddr, SocketAddrV4, UdpSocket};
+use std::net::UdpSocket;
 
-use crate::parser::{header::{DNSHeader, DNSHeaderType, ResultCode}, packet::{DNSPacket, DNSPacketParser}};
-
-use super::lookup::lookup;
+use crate::{parser::{header::{DNSHeader, DNSHeaderType, ResultCode}, packet::{DNSPacket, DNSPacketParser}}, server::lookup::lookup_recursively};
 
 pub fn handle_query(socket: &UdpSocket) -> Result<(), String> {
-    let google_dns_server = SocketAddr::V4(
-        SocketAddrV4::new(Ipv4Addr::new(8, 8, 8, 8), 53),
-    );
-    
     let mut packet_buf = [0u8; 65_535];
     println!("READY TO RECEIVE");
     let (bytes_read, src) = match socket.recv_from(&mut packet_buf) {
@@ -42,7 +36,7 @@ pub fn handle_query(socket: &UdpSocket) -> Result<(), String> {
     };
 
     if let Some(question) = req_packet.questions.pop() {
-        match lookup(google_dns_server, &question.name, question.rtype) {
+        match lookup_recursively(&question.name, question.rtype) {
             Ok(DNSPacket { header, questions: _, answers, authority, additional }) => {
                 resp_packet.header.tc = header.tc;
                 resp_packet.header.ancount = header.ancount;

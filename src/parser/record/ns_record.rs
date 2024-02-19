@@ -5,7 +5,7 @@ use super::DNSRecordPack;
 
 #[derive(Debug, PartialEq, Eq)]
 pub struct DNSNSRecord {
-    nsdname: String,
+    pub nsdname: String,
 }
 
 impl DNSRecordPack for DNSNSRecord {

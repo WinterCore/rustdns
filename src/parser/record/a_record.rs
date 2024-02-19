@@ -3,7 +3,7 @@ use crate::parser::LabelPtrMap;
 use super::DNSRecordPack;
 
 #[derive(Debug, PartialEq, Eq)]
-pub struct DNSARecord { ip: [u8; 4] }
+pub struct DNSARecord { pub ip: [u8; 4] }
 
 impl DNSRecordPack for DNSARecord {
     const RTYPE: u16 = 1;
